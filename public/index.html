@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>美食地图 - 西北旺万象汇</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+/* ── Theme variables ── */
+:root {
+  --primary: #ff6b35; --primary-dark: #e55a2b; --primary-light: #fff5f2;
+  --bg: #f8f9fa; --card: #fff; --text: #2c3e50; --text-secondary: #8899a6;
+  --border: #e8ecf0; --shadow: 0 2px 12px rgba(0,0,0,0.06);
+  --radius: 10px; --input-bg: #f0f2f5; --hover-bg: #f5f5f5;
+  --overlay-bg: rgba(0,0,0,0.35); --tag-bg: #fff5f2;
+}
+[data-theme="dark"] {
+  --primary: #ff7b42; --primary-dark: #ff6b35; --primary-light: rgba(255,123,66,0.12);
+  --bg: #1a1d23; --card: #252830; --text: #e0e0e4; --text-secondary: #8b8d97;
+  --border: #333840; --shadow: 0 2px 12px rgba(0,0,0,0.3);
+  --input-bg: #2a2d35; --hover-bg: #2f323a;
+  --overlay-bg: rgba(0,0,0,0.6); --tag-bg: rgba(255,123,66,0.15);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; width:100%; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; color:var(--text); background:var(--bg); transition:background 0.3s,color 0.3s; }
+
+.app-container { display:flex; height:100vh; width:100vw; }
+.sidebar { width:28%; min-width:320px; max-width:440px; order:1; display:flex; flex-direction:column; background:var(--card); border-left:1px solid var(--border); z-index:10; position:relative; transition:background 0.3s,border 0.3s; }
+.sidebar-header { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-shrink:0; justify-content:space-between; }
+.sidebar-header .logo-area { display:flex; align-items:center; gap:8px; min-width:0; }
+.sidebar-header .logo { font-size:22px; flex-shrink:0; }
+.sidebar-header h1 { font-size:15px; font-weight:700; white-space:nowrap; }
+.sidebar-header .subtitle { font-size:10px; color:var(--text-secondary); margin-top:1px; }
+.header-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.btn-icon { width:32px; height:32px; border-radius:50%; border:1px solid var(--border); background:var(--card); cursor:pointer; font-size:15px; display:flex; align-items:center; justify-content:center; transition:all 0.2s; color:var(--text); }
+.btn-icon:hover { background:var(--hover-bg); }
+.btn-icon.theme-btn { font-size:16px; }
+
+.user-badge { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); }
+.user-badge .avatar { width:26px; height:26px; border-radius:50%; background:var(--primary); color:#fff; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; }
+.user-badge .logout-link { color:var(--primary); cursor:pointer; font-weight:600; margin-left:2px; }
+.user-badge .logout-link:hover { text-decoration:underline; }
+
+.sidebar-tabs { display:flex; border-bottom:1px solid var(--border); flex-shrink:0; }
+.sidebar-tabs button { flex:1; padding:12px 8px; border:none; background:none; font-size:14px; cursor:pointer; color:var(--text-secondary); transition:all 0.2s; border-bottom:2px solid transparent; font-family:inherit; }
+.sidebar-tabs button:hover { color:var(--text); background:var(--hover-bg); }
+.sidebar-tabs button.active { color:var(--primary); border-bottom-color:var(--primary); font-weight:600; }
+.sidebar-tabs button:disabled { opacity:0.4; cursor:not-allowed; }
+.sidebar-content { flex:1; overflow-y:auto; overflow-x:hidden; padding:16px; scroll-behavior:smooth; }
+.sidebar-content::-webkit-scrollbar { width:4px; }
+.sidebar-content::-webkit-scrollbar-thumb { background:#ccc; border-radius:2px; }
+
+.map-area { flex:1; order:0; position:relative; }
+#map { width:100%; height:100%; }
+/* 深色模式：地图瓦片变暗 */
+[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9) saturate(0.75); }
+.map-hint { position:absolute; bottom:24px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.75); color:#fff; padding:10px 20px; border-radius:20px; font-size:13px; pointer-events:none; z-index:1000; animation:fadeInOut 3s ease-in-out forwards; }
+@keyframes fadeInOut { 0%{opacity:0;transform:translateX(-50%) translateY(10px);} 20%{opacity:1;transform:translateX(-50%) translateY(0);} 80%{opacity:1} 100%{opacity:0} }
+
+.tab-panel { display:none; }
+.tab-panel.active { display:block; }
+
+.form-group { margin-bottom:12px; }
+.form-group label { display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:var(--text-secondary); }
+.form-group input, .form-group select, .form-group textarea { width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:14px; font-family:inherit; transition:border 0.2s,background 0.3s,color 0.3s; background:var(--input-bg); color:var(--text); }
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-light); }
+.form-group textarea { resize:vertical; min-height:56px; }
+.form-row { display:flex; gap:10px; }
+.form-row .form-group { flex:1; }
+
+.photo-upload { border:2px dashed var(--border); border-radius:var(--radius); padding:16px; text-align:center; cursor:pointer; transition:all 0.2s; background:var(--input-bg); }
+.photo-upload:hover { border-color:var(--primary); background:var(--primary-light); }
+.photo-upload.has-photo { padding:8px; }
+.photo-upload input[type=file] { display:none; }
+.photo-preview { max-width:100%; max-height:120px; border-radius:8px; display:none; }
+.photo-preview.show { display:inline-block; }
+.upload-hint { font-size:12px; color:var(--text-secondary); }
+.upload-icon { font-size:30px; display:block; margin-bottom:4px; }
+
+.photo-actions { display:none; gap:8px; margin-top:8px; justify-content:center; }
+.photo-actions.show { display:flex; }
+
+.rating-stars { display:flex; gap:4px; cursor:pointer; }
+.rating-stars .star { font-size:22px; color:#ddd; transition:color 0.15s; user-select:none; }
+.rating-stars .star.active { color:#f5a623; }
+
+.btn { padding:9px 16px; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.2s; font-family:inherit; }
+.btn-primary { background:var(--primary); color:#fff; }
+.btn-primary:hover { background:var(--primary-dark); transform:translateY(-1px); box-shadow:0 4px 12px rgba(255,107,53,0.3); }
+.btn-outline { background:var(--card); border:1px solid var(--border); color:var(--text); }
+.btn-outline:hover { background:var(--hover-bg); }
+.btn-danger { background:var(--card); border:1px solid #ff4d4f; color:#ff4d4f; }
+.btn-danger:hover { background:#fff2f0; }
+.btn-sm { padding:5px 10px; font-size:12px; }
+.btn-block { width:100%; }
+.btn:disabled { opacity:0.5; cursor:not-allowed; transform:none; box-shadow:none; }
+
+.coord-display { display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--primary-light); border-radius:8px; font-size:12px; color:var(--primary); font-weight:500; }
+
+.login-prompt { text-align:center; padding:30px 20px; }
+.login-prompt .icon { font-size:40px; margin-bottom:10px; }
+.login-prompt p { font-size:13px; color:var(--text-secondary); margin-bottom:14px; }
+.login-prompt .btn { margin:4px; }
+
+.food-card { display:flex; gap:10px; padding:10px; border-radius:var(--radius); background:var(--card); border:1px solid var(--border); margin-bottom:8px; cursor:pointer; transition:all 0.2s; }
+.food-card:hover { box-shadow:var(--shadow); border-color:var(--primary); }
+.food-card .thumb { width:50px; height:50px; border-radius:8px; overflow:hidden; flex-shrink:0; background:var(--input-bg); display:flex; align-items:center; justify-content:center; }
+.food-card .thumb img { width:100%; height:100%; object-fit:cover; }
+.food-card .info { flex:1; min-width:0; }
+.food-card .info .name-row { display:flex; align-items:center; gap:6px; }
+.food-card .info .name { font-weight:600; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.food-card .info .by { font-size:10px; color:var(--text-secondary); background:var(--input-bg); padding:1px 6px; border-radius:8px; white-space:nowrap; }
+.food-card .info .by.own { background:var(--primary-light); color:var(--primary); }
+.food-card .info .meta { font-size:11px; color:var(--text-secondary); display:flex; gap:6px; align-items:center; margin-top:2px; }
+.food-card .info .meta .cat { background:var(--tag-bg); color:var(--primary); padding:1px 7px; border-radius:10px; font-size:10px; }
+.food-card .actions { display:flex; gap:4px; align-items:flex-start; flex-shrink:0; }
+
+.search-box { position:relative; margin-bottom:12px; }
+.search-box input { width:100%; padding:9px 11px 9px 34px; border:1px solid var(--border); border-radius:8px; font-size:13px; background:var(--input-bg); color:var(--text); }
+.search-box input:focus { outline:none; border-color:var(--primary); }
+.search-box .search-icon { position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:15px; color:var(--text-secondary); }
+
+.filter-bar { display:flex; gap:6px; margin-bottom:12px; }
+.filter-bar button { padding:4px 10px; border-radius:12px; border:1px solid var(--border); background:var(--card); font-size:11px; cursor:pointer; color:var(--text-secondary); transition:all 0.2s; font-family:inherit; }
+.filter-bar button:hover { border-color:var(--primary); color:var(--primary); }
+.filter-bar button.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+
+.empty-state { text-align:center; padding:40px 20px; color:var(--text-secondary); }
+.empty-state .icon { font-size:44px; margin-bottom:10px; }
+
+.settings-section { margin-bottom:18px; }
+.settings-section h3 { font-size:13px; font-weight:600; margin-bottom:8px; color:var(--text); }
+.tile-option { display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:8px; cursor:pointer; border:2px solid transparent; margin-bottom:5px; background:var(--input-bg); transition:all 0.2s; font-size:13px; color:var(--text); }
+.tile-option:hover { border-color:var(--primary); }
+.tile-option.selected { border-color:var(--primary); background:var(--primary-light); }
+
+.theme-toggle-row { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-radius:8px; background:var(--input-bg); }
+.theme-toggle-row span { font-size:13px; font-weight:600; }
+.toggle-switch { position:relative; width:48px; height:26px; background:#ccc; border-radius:13px; cursor:pointer; transition:background 0.3s; }
+.toggle-switch::after { content:''; position:absolute; top:3px; left:3px; width:20px; height:20px; background:#fff; border-radius:50%; transition:left 0.3s; }
+.toggle-switch.on { background:var(--primary); }
+.toggle-switch.on::after { left:25px; }
+
+/* Food marker */
+.food-marker { background:none!important; border:none!important; }
+.food-marker-inner { width:42px; height:42px; border-radius:50%; border:3px solid #fff; box-shadow:0 2px 10px rgba(0,0,0,0.25); overflow:hidden; background:#fff; transition:transform 0.2s; }
+.food-marker-inner:hover { transform:scale(1.15); z-index:999; }
+.food-marker-inner img { width:100%; height:100%; object-fit:cover; }
+.food-marker-inner .no-photo { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:18px; background:var(--primary); color:#fff; }
+
+/* Leaflet popup */
+.leaflet-popup-content-wrapper { border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.15); }
+.leaflet-popup-content { margin:8px 12px; font-size:12px; min-width:180px; }
+.popup-img { width:100%; border-radius:8px; margin-bottom:6px; max-height:130px; object-fit:cover; }
+.popup-name { font-size:14px; font-weight:700; margin-bottom:3px; }
+.popup-meta { font-size:11px; color:var(--text-secondary); margin-bottom:4px; }
+.popup-desc { font-size:11px; color:var(--text-secondary); margin-bottom:8px; line-height:1.4; }
+.popup-by { font-size:10px; color:var(--primary); margin-bottom:6px; }
+.popup-btns { display:flex; gap:6px; }
+.popup-btns button { flex:1; font-size:11px; }
+
+/* Auth modal */
+.modal-overlay { position:fixed; inset:0; background:var(--overlay-bg); z-index:3000; display:flex; align-items:center; justify-content:center; animation:fadeIn 0.2s; }
+@keyframes fadeIn { from{opacity:0} to{opacity:1} }
+.modal { background:var(--card); border-radius:14px; padding:24px; width:90%; max-width:350px; box-shadow:0 12px 40px rgba(0,0,0,0.25); color:var(--text); }
+.modal h2 { font-size:18px; margin-bottom:4px; text-align:center; }
+.modal .modal-sub { font-size:12px; color:var(--text-secondary); text-align:center; margin-bottom:18px; }
+.modal .form-group { margin-bottom:10px; }
+.modal .btn { padding:10px 0; font-size:14px; }
+.modal .switch-link { text-align:center; margin-top:14px; font-size:12px; color:var(--text-secondary); }
+.modal .switch-link a { color:var(--primary); cursor:pointer; font-weight:600; }
+.modal .switch-link a:hover { text-decoration:underline; }
+.modal .error-msg { color:#ff4d4f; font-size:11px; text-align:center; margin-top:6px; min-height:16px; }
+.modal .close-btn { position:absolute; top:10px; right:14px; background:none; border:none; font-size:20px; cursor:pointer; color:var(--text-secondary); }
+
+/* Toast */
+.toast { position:fixed; top:20px; left:50%; transform:translateX(-50%); background:#333; color:#fff; padding:9px 22px; border-radius:20px; font-size:13px; z-index:9999; animation:slideDown 0.3s ease; pointer-events:none; }
+@keyframes slideDown { from{opacity:0;transform:translateX(-50%) translateY(-20px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+
+/* Portrait / Mobile */
+@media (max-width:768px) {
+  .app-container { flex-direction:column; }
+  .sidebar { width:100%; min-width:unset; max-width:unset; height:38%; min-height:230px; border-right:none; border-left:none; border-top:1px solid var(--border); }
+  .map-area { height:62%; flex:none; }
+  .sidebar-header { padding:8px 12px; }
+  .sidebar-header h1 { font-size:14px; }
+  .sidebar-tabs button { padding:10px 4px; font-size:12px; }
+  .sidebar-content { padding:10px; }
+  .food-card { padding:8px; }
+  .food-card .thumb { width:40px; height:40px; }
+  .photo-upload { padding:12px; }
+  .photo-actions.show { display:flex; }
+  .leaflet-control-zoom a { width:30px!important; height:30px!important; line-height:30px!important; font-size:15px!important; }
+}
+@media (max-width:400px) {
+  .sidebar { height:42%; min-height:210px; }
+  .map-area { height:58%; }
+  .modal { padding:18px; }
+}
+@media (max-height:500px) and (orientation:landscape) {
+  .app-container { flex-direction:row; }
+  .sidebar { width:35%; min-width:250px; max-width:360px; height:100%; flex:none; order:1; border-left:1px solid var(--border); border-right:none; border-top:none; }
+  .map-area { flex:1; height:100%; order:0; }
+}
+</style>
+</head>
+<body>
+
+<div class="app-container">
+  <!-- Sidebar -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-area">
+        <span class="logo">🍜</span>
+        <div>
+          <h1>美食地图</h1>
+          <div class="subtitle">西北旺万象汇周边</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="btn-icon theme-btn" id="themeToggle" title="切换主题">🌓</button>
+        <div class="user-badge" id="userBadge" style="display:none;">
+          <span class="avatar" id="userAvatar"></span>
+          <span id="userNameDisplay" style="font-size:11px;"></span>
+          <span class="logout-link" id="btnLogout">退出</span>
+        </div>
+        <button class="btn btn-sm btn-outline" id="btnLogin" style="white-space:nowrap;">🔑 登录</button>
+      </div>
+    </div>
+    <div class="sidebar-tabs">
+      <button class="active" data-tab="add" id="tabAddBtn">➕ 添加</button>
+      <button data-tab="list" id="tabListBtn">📋 列表 <span id="foodCount" style="font-size:10px;opacity:0.7;"></span></button>
+      <button data-tab="settings">⚙️ 设置</button>
+    </div>
+    <div class="sidebar-content" id="sidebarContent">
+
+      <!-- Add Panel -->
+      <div class="tab-panel active" id="tab-add">
+        <div id="addLoggedIn" style="display:none;">
+          <div class="coord-display" id="coordDisplay">
+            <span>📍</span>
+            <span id="coordText">点击地图选择位置</span>
+          </div>
+          <div style="margin-top:12px;">
+            <div class="form-group"><label>美食名称 *</label><input type="text" id="foodName" placeholder="如：老北京炸酱面"></div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>分类</label>
+                <select id="foodCategory">
+                  <option value="">选择分类</option><option>🍜 面馆/粉店</option><option>🥘 火锅/串串</option>
+                  <option>🍖 烧烤</option><option>🍚 中餐/炒菜</option><option>🍣 日料</option>
+                  <option>🍕 西餐</option><option>🍰 甜品/烘焙</option><option>☕ 咖啡/茶饮</option>
+                  <option>🍺 酒吧</option><option>🍲 小吃/快餐</option><option>🏪 其他</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>评分</label>
+                <div class="rating-stars" id="ratingStars">
+                  <span class="star" data-r="1">★</span><span class="star" data-r="2">★</span>
+                  <span class="star" data-r="3">★</span><span class="star" data-r="4">★</span>
+                  <span class="star" data-r="5">★</span>
+                </div>
+              </div>
+            </div>
+            <div class="form-group"><label>描述</label><textarea id="foodDesc" placeholder="说说这家店怎么样…"></textarea></div>
+            <div class="form-group">
+              <label>照片</label>
+              <div class="photo-upload" id="photoUpload">
+                <input type="file" id="photoInput" accept="image/*">
+                <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;">
+                <span class="upload-icon">📷</span>
+                <span class="upload-hint">点击上传美食照片（自动压缩）</span>
+                <img class="photo-preview" id="photoPreview">
+              </div>
+              <div class="photo-actions" id="photoActions">
+                <button class="btn btn-outline btn-sm" id="btnCamera">📸 拍照</button>
+                <button class="btn btn-outline btn-sm" id="btnGallery">🖼️ 相册</button>
+              </div>
+            </div>
+            <div class="form-row">
+              <button class="btn btn-outline" id="btnCancel" style="display:none;">取消编辑</button>
+              <button class="btn btn-primary btn-block" id="btnSave" style="flex:1;">💾 保存美食</button>
+            </div>
+          </div>
+        </div>
+        <div class="login-prompt" id="addLoginPrompt">
+          <div class="icon">🔑</div>
+          <p>登录后即可添加你的美食记录</p>
+          <button class="btn btn-primary" id="btnLoginPrompt">登录 / 注册</button>
+        </div>
+      </div>
+
+      <!-- List Panel -->
+      <div class="tab-panel" id="tab-list">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="searchInput" placeholder="搜索名称或分类…">
+        </div>
+        <div class="filter-bar">
+          <button class="active" data-filter="all">全部</button>
+          <button data-filter="mine" id="filterMine" style="display:none;">我的</button>
+        </div>
+        <div id="foodList"></div>
+        <div class="empty-state" id="emptyState" style="display:none;">
+          <div class="icon">🗺️</div>
+          <p id="emptyMsg">还没有美食记录</p>
+          <p style="font-size:11px;margin-top:3px;">点击地图选择位置，开始记录吧！</p>
+        </div>
+      </div>
+
+      <!-- Settings Panel -->
+      <div class="tab-panel" id="tab-settings">
+        <div class="settings-section">
+          <h3>外观</h3>
+          <div class="theme-toggle-row">
+            <span id="themeLabel">☀️ 浅色模式</span>
+            <div class="toggle-switch" id="themeSwitch"></div>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h3>默认地图位置</h3>
+          <div class="form-group"><label>纬度</label><input type="number" id="settingLat" step="any" placeholder="40.0396"></div>
+          <div class="form-group"><label>经度</label><input type="number" id="settingLng" step="any" placeholder="116.2845"></div>
+          <div class="form-group"><label>缩放级别 (1-18)</label><input type="number" id="settingZoom" min="1" max="18" placeholder="16"></div>
+          <button class="btn btn-primary" id="btnSaveLocation">📍 保存并跳转</button>
+          <button class="btn btn-outline" id="btnResetLocation" style="margin-left:6px;">↺ 恢复默认</button>
+        </div>
+        <div class="settings-section">
+          <h3>地图样式</h3>
+          <div id="tileOptions"></div>
+        </div>
+        <div class="settings-section">
+          <h3>数据管理</h3>
+          <button class="btn btn-danger btn-block" id="btnClearMy">🗑️ 清除我的全部数据</button>
+          <p style="font-size:10px;color:var(--text-secondary);margin-top:6px;">仅删除你发布的记录，他人的不受影响</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Map -->
+  <div class="map-area">
+    <div id="map"></div>
+    <div class="map-hint" id="mapHint">👆 点击地图选择美食位置</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  // ── Config ──
+  const DEFAULT_CENTER = [40.0396, 116.2845];
+  const DEFAULT_ZOOM = 16;
+  const TILE_LAYERS = {
+    gaode:   { name:'高德标准地图', url:'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', opts:{subdomains:'1234',maxZoom:18,attribution:'&copy; 高德'} },
+    gaode_sat:{ name:'高德卫星图',   url:'https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}', opts:{subdomains:'1234',maxZoom:18,attribution:'&copy; 高德'} },
+    osm:      { name:'OpenStreetMap',url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', opts:{maxZoom:19,attribution:'&copy; OSM'} }
+  };
+
+  // ── State ──
+  let map, tileLayer, markersLayer, tempMarker;
+  let editingId = null, pendingLat = null, pendingLng = null;
+  let currentRating = 0, compressedPhoto = null, compressedFile = null;
+  let allFoods = [], currentFilter = 'all';
+  const markerMap = new Map();
+  let currentUser = null;
+
+  // ── Auth ──
+  function getToken() { return localStorage.getItem('foodmap_token'); }
+  function setToken(t) { localStorage.setItem('foodmap_token', t); }
+  function clearToken() { localStorage.removeItem('foodmap_token'); }
+
+  async function api(url, opts = {}) {
+    const headers = opts.headers || {};
+    const token = getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    // Don't set Content-Type for FormData (browser sets it with boundary)
+    if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+    const res = await fetch(url, { ...opts, headers });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `请求失败 (${res.status})`);
+    return data;
+  }
+
+  async function checkAuth() {
+    const token = getToken();
+    if (!token) return;
+    try {
+      const data = await api('/api/me');
+      currentUser = data.user;
+    } catch {
+      clearToken(); currentUser = null;
+    }
+    updateAuthUI();
+  }
+
+  function updateAuthUI() {
+    const badge = $('#userBadge'), loginBtn = $('#btnLogin');
+    const addLoggedIn = $('#addLoggedIn'), addPrompt = $('#addLoginPrompt');
+    const filterMine = $('#filterMine');
+    const tabAdd = $('#tabAddBtn');
+
+    if (currentUser) {
+      badge.style.display = 'flex';
+      loginBtn.style.display = 'none';
+      addLoggedIn.style.display = 'block';
+      addPrompt.style.display = 'none';
+      filterMine.style.display = '';
+      tabAdd.disabled = false;
+      $('#userAvatar').textContent = currentUser.username.charAt(0).toUpperCase();
+      $('#userNameDisplay').textContent = currentUser.username;
+    } else {
+      badge.style.display = 'none';
+      loginBtn.style.display = '';
+      addLoggedIn.style.display = 'none';
+      addPrompt.style.display = 'block';
+      filterMine.style.display = 'none';
+      tabAdd.disabled = true;
+      if (currentFilter === 'mine') { currentFilter = 'all'; updateFilterButtons(); }
+      renderFoodList();
+    }
+  }
+
+  function showAuthModal(mode) {
+    const isLogin = mode === 'login';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'authModal';
+    overlay.innerHTML = `
+      <div class="modal" style="position:relative;">
+        <div class="close-btn" id="closeAuth">&times;</div>
+        <h2>${isLogin ? '🔑 登录' : '✨ 注册'}</h2>
+        <div class="modal-sub">${isLogin ? '欢迎回来，看看有什么好吃的' : '加入美食地图，分享你的发现'}</div>
+        <div class="form-group"><label>用户名</label><input type="text" id="authUsername" placeholder="2-20个字符，中英文数字" autocomplete="username"></div>
+        <div class="form-group"><label>密码</label><input type="password" id="authPassword" placeholder="${isLogin?'输入密码':'设置密码（至少4位）'}" autocomplete="${isLogin?'current-password':'new-password'}"></div>
+        <div class="error-msg" id="authError"></div>
+        <button class="btn btn-primary btn-block" id="authSubmit">${isLogin ? '登 录' : '注 册'}</button>
+        <div class="switch-link">
+          ${isLogin ? '没有账号？<a id="switchToRegister">立即注册</a>' : '已有账号？<a id="switchToLogin">去登录</a>'}
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    $('#closeAuth').onclick = close;
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    $('#switchToRegister')?.addEventListener('click', () => { close(); showAuthModal('register'); });
+    $('#switchToLogin')?.addEventListener('click', () => { close(); showAuthModal('login'); });
+
+    $('#authSubmit').onclick = async () => {
+      const username = $('#authUsername').value.trim();
+      const password = $('#authPassword').value.trim();
+      const errEl = $('#authError');
+      errEl.textContent = '';
+
+      if (!username || !password) { errEl.textContent = '请填写用户名和密码'; return; }
+      if (username.length < 2 || username.length > 20) { errEl.textContent = '用户名需 2-20 个字符'; return; }
+      if (!/^[\w\u4e00-\u9fa5]+$/.test(username)) { errEl.textContent = '用户名只能包含中英文、数字和下划线'; return; }
+      if (password.length < 4 || password.length > 50) { errEl.textContent = '密码需 4-50 个字符'; return; }
+
+      $('#authSubmit').disabled = true;
+      $('#authSubmit').textContent = '处理中…';
+      try {
+        const data = await api('/api/' + (isLogin ? 'login' : 'register'), {
+          method: 'POST',
+          body: JSON.stringify({ username, password })
+        });
+        setToken(data.token);
+        currentUser = data.user;
+        updateAuthUI();
+        await loadAllFoods();
+        close();
+        toast(isLogin ? `👋 欢迎回来，${username}` : `🎉 注册成功，${username}`);
+      } catch (err) {
+        errEl.textContent = err.message;
+        $('#authSubmit').disabled = false;
+        $('#authSubmit').textContent = isLogin ? '登 录' : '注 册';
+      }
+    };
+
+    // Submit on Enter
+    const onKey = (e) => { if (e.key === 'Enter') $('#authSubmit').click(); };
+    $('#authUsername').addEventListener('keydown', onKey);
+    $('#authPassword').addEventListener('keydown', onKey);
+
+    setTimeout(() => $('#authUsername').focus(), 200);
+  }
+
+  // ── Theme ──
+  function initTheme() {
+    const saved = localStorage.getItem('foodmap_theme');
+    if (saved) {
+      document.documentElement.setAttribute('data-theme', saved);
+    } else if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+    updateThemeUI();
+  }
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('foodmap_theme', next);
+    updateThemeUI();
+  }
+  function updateThemeUI() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const sw = $('#themeSwitch');
+    if (sw) { sw.classList.toggle('on', isDark); }
+    const labelEl = $('#themeLabel');
+    if (labelEl) labelEl.innerHTML = isDark ? '🌙 深色模式' : '☀️ 浅色模式';
+  }
+
+  // ── DOM helpers ──
+  const $ = s => document.querySelector(s);
+  const $$ = s => document.querySelectorAll(s);
+
+  // ── Toast ──
+  function toast(msg, dur) {
+    const el = document.createElement('div');
+    el.className = 'toast'; el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), dur || 2500);
+  }
+
+  // ── Photo ──
+  function compressImage(file) {
+    return new Promise((resolve, reject) => {
+      if (!file.type.startsWith('image/')) { reject(new Error('请选择图片文件')); return; }
+      const reader = new FileReader();
+      reader.onload = e => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX = 150;
+          let w = img.width, h = img.height;
+          if (w > h) { if (w > MAX) { h = Math.round(h*MAX/w); w = MAX; } }
+          else { if (h > MAX) { w = Math.round(w*MAX/h); h = MAX; } }
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          canvas.toBlob(blob => {
+            resolve({ dataUrl: canvas.toDataURL('image/jpeg', 0.4), blob });
+          }, 'image/jpeg', 0.4);
+        };
+        img.onerror = () => reject(new Error('图片加载失败'));
+        img.src = e.target.result;
+      };
+      reader.onerror = () => reject(new Error('文件读取失败'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function handlePhotoFile(file) {
+    if (!file) return;
+    compressImage(file).then(result => {
+      compressedPhoto = result.dataUrl;
+      compressedFile = new File([result.blob], 'food.jpg', { type: 'image/jpeg' });
+      updatePhotoPreview();
+    }).catch(err => toast('❌ '+err.message));
+  }
+
+  function updatePhotoPreview() {
+    const preview = $('#photoPreview'), upIcon = $('#photoUpload').querySelector('.upload-icon');
+    const upHint = $('#photoUpload').querySelector('.upload-hint'), upDiv = $('#photoUpload');
+    if (compressedPhoto) {
+      preview.src = compressedPhoto; preview.classList.add('show');
+      upIcon.style.display = 'none'; upHint.style.display = 'none';
+      upDiv.classList.add('has-photo');
+    } else {
+      preview.classList.remove('show'); preview.src = '';
+      upIcon.style.display = ''; upHint.style.display = '';
+      upDiv.classList.remove('has-photo');
+    }
+  }
+
+  // ── Settings ──
+  function getSettings() {
+    try { return JSON.parse(localStorage.getItem('foodmap_settings') || '{}'); } catch { return {}; }
+  }
+  function saveSettings(s) { localStorage.setItem('foodmap_settings', JSON.stringify(s)); }
+  function loadSettingsUI() {
+    const s = getSettings();
+    $('#settingLat').value = s.lat || DEFAULT_CENTER[0];
+    $('#settingLng').value = s.lng || DEFAULT_CENTER[1];
+    $('#settingZoom').value = s.zoom || DEFAULT_ZOOM;
+  }
+  function renderTileOptions() {
+    const current = localStorage.getItem('foodmap_tile') || 'gaode';
+    $('#tileOptions').innerHTML = Object.entries(TILE_LAYERS).map(([k,d]) =>
+      `<div class="tile-option${k===current?' selected':''}" data-tile="${k}">${d.name}</div>`
+    ).join('');
+    $('#tileOptions').querySelectorAll('.tile-option').forEach(opt => {
+      opt.addEventListener('click', () => {
+        const k = opt.dataset.tile;
+        localStorage.setItem('foodmap_tile', k);
+        map.removeLayer(tileLayer);
+        tileLayer = L.tileLayer(TILE_LAYERS[k].url, TILE_LAYERS[k].opts).addTo(map);
+        renderTileOptions();
+        toast('已切换为 '+TILE_LAYERS[k].name, 1500);
+      });
+    });
+  }
+
+  // ── Map ──
+  function initMap() {
+    const s = getSettings();
+    const center = [s.lat || DEFAULT_CENTER[0], s.lng || DEFAULT_CENTER[1]];
+    const zoom = s.zoom || DEFAULT_ZOOM;
+    map = L.map('map', { center, zoom, zoomControl: true, attributionControl: false });
+
+    const tileKey = localStorage.getItem('foodmap_tile') || 'gaode';
+    const t = TILE_LAYERS[tileKey] || TILE_LAYERS.gaode;
+    tileLayer = L.tileLayer(t.url, t.opts).addTo(map);
+    markersLayer = L.layerGroup().addTo(map);
+
+    map.on('click', onMapClick);
+    window.addEventListener('resize', () => setTimeout(() => map.invalidateSize(), 200));
+    setTimeout(() => { $('#mapHint').style.display='block'; setTimeout(()=>$('#mapHint').style.display='none',3500); }, 1000);
+  }
+
+  function onMapClick(e) {
+    pendingLat = e.latlng.lat; pendingLng = e.latlng.lng;
+    updateCoordDisplay();
+    if (!currentUser) { showAuthModal('login'); return; }
+    switchTab('add');
+    if (tempMarker) markersLayer.removeLayer(tempMarker);
+    tempMarker = L.circleMarker([pendingLat,pendingLng], {
+      radius:8, color:'#ff6b35', fillColor:'#ff6b35', fillOpacity:0.5, weight:2
+    }).addTo(markersLayer);
+  }
+  function updateCoordDisplay() {
+    if (pendingLat !== null) $('#coordText').textContent = pendingLat.toFixed(6)+', '+pendingLng.toFixed(6);
+  }
+
+  // ── Markers ──
+  function photoUrl(food) {
+    return food.photo ? '/api/photos/' + food.photo : '';
+  }
+  function categoryEmoji(cat) {
+    if (!cat) return '🍜';
+    const m = String(cat).match(/^\s*(\p{Extended_Pictographic})/u);
+    return m ? m[1] : '🍜';
+  }
+  function createFoodIcon(food) {
+    const photo = food.photo;
+    const imgTag = photo ? `<img src="${photoUrl({photo})}" alt="" loading="lazy">` : '';
+    const fallback = photo ? '' : `<span class="no-photo">${categoryEmoji(food.category)}</span>`;
+    return L.divIcon({
+      className:'food-marker', iconSize:[42,42], iconAnchor:[21,21], popupAnchor:[0,-21],
+      html: `<div class="food-marker-inner">${imgTag}${fallback}</div>`
+    });
+  }
+  function addMarker(food) {
+    const marker = L.marker([food.lat,food.lng], { icon:createFoodIcon(food) }).addTo(markersLayer);
+    marker.bindPopup(createPopupContent(food));
+    marker.on('click', () => marker.setPopupContent(createPopupContent(food)));
+    markerMap.set(food.id, marker);
+  }
+  function updateMarker(food) {
+    const m = markerMap.get(food.id);
+    if (!m) { addMarker(food); return; }
+    m.setLatLng([food.lat, food.lng]);
+    m.setIcon(createFoodIcon(food));
+    m.setPopupContent(createPopupContent(food));
+  }
+  function removeMarker(id) {
+    const m = markerMap.get(id);
+    if (m) { markersLayer.removeLayer(m); markerMap.delete(id); }
+  }
+
+  function createPopupContent(food) {
+    const stars = Array.from({length:5}, (_,i) =>
+      i < (food.rating||0)
+        ? '<span style="color:#f5a623;font-size:14px;">★</span>'
+        : '<span style="color:#ccc;font-size:14px;">☆</span>'
+    ).join('');
+    const cat = (food.category||'').replace(/^[^\s]+\s/,'');
+    const imgTag = food.photo ? `<img class="popup-img" src="${photoUrl(food)}" alt="" loading="lazy">` : '';
+    const isOwner = currentUser && food.user_id === currentUser.id;
+    const byLine = `<div class="popup-by">👤 ${escHtml(food.username || '未知')}${isOwner?' (我)':''}</div>`;
+    const btns = isOwner ? `
+      <div class="popup-btns">
+        <button class="btn btn-outline btn-sm" data-edit="${food.id}">✏️ 编辑</button>
+        <button class="btn btn-danger btn-sm" data-del="${food.id}">🗑 删除</button>
+      </div>` : '';
+    return `<div>${imgTag}<div class="popup-name">${escHtml(food.name)}</div><div class="popup-meta">${cat} &nbsp; ${stars}</div>${food.description?`<div class="popup-desc">${escHtml(food.description)}</div>`:''}${byLine}${btns}</div>`;
+  }
+  function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+  // ── API operations ──
+  async function loadAllFoods() {
+    try {
+      allFoods = await api('/api/foods');
+      renderAllMarkers();
+      renderFoodList();
+      $('#foodCount').textContent = allFoods.length ? `(${allFoods.length})` : '';
+    } catch (err) {
+      toast('⚠️ 加载数据失败: '+err.message);
+    }
+  }
+  function renderAllMarkers() {
+    markersLayer.clearLayers(); markerMap.clear();
+    if (tempMarker) tempMarker = null;
+    allFoods.forEach(addMarker);
+  }
+
+  async function saveFood() {
+    const name = $('#foodName').value.trim();
+    if (!name) { toast('请输入美食名称'); return; }
+    if (pendingLat===null || pendingLng===null) { toast('请先在地图上点击选择位置'); return; }
+
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('category', $('#foodCategory').value);
+    formData.append('rating', currentRating.toString());
+    formData.append('description', $('#foodDesc').value.trim());
+    formData.append('lat', pendingLat.toString());
+    formData.append('lng', pendingLng.toString());
+    if (compressedFile) formData.append('photo', compressedFile);
+
+    try {
+      if (editingId) {
+        await api('/api/foods/' + editingId, { method: 'PUT', body: formData });
+        toast('✅ 已更新');
+      } else {
+        await api('/api/foods', { method: 'POST', body: formData });
+        toast('✅ 添加成功');
+      }
+      await loadAllFoods();
+      resetForm();
+    } catch (err) {
+      toast('❌ '+err.message);
+    }
+  }
+
+  function startEdit(id) {
+    const food = allFoods.find(f=>f.id===id);
+    if (!food || !currentUser || food.user_id !== currentUser.id) {
+      toast('只能编辑自己的记录'); return;
+    }
+    editingId = id;
+    $('#foodName').value = food.name;
+    $('#foodCategory').value = food.category||'';
+    $('#foodDesc').value = food.description||'';
+    currentRating = food.rating||0;
+    compressedPhoto = food.photo ? photoUrl(food) : null;
+    compressedFile = null;
+    pendingLat = food.lat; pendingLng = food.lng;
+    updateRatingStars(); updatePhotoPreview(); updateCoordDisplay();
+    $('#btnSave').textContent = '💾 更新美食';
+    $('#btnCancel').style.display = '';
+    if (tempMarker) markersLayer.removeLayer(tempMarker);
+    tempMarker = L.circleMarker([pendingLat,pendingLng], {
+      radius:8, color:'#ff6b35', fillColor:'#ff6b35', fillOpacity:0.5, weight:2
+    }).addTo(markersLayer);
+    switchTab('add');
+    $('#sidebarContent').scrollTop = 0;
+    map.flyTo([food.lat,food.lng], 18, { duration:0.5 });
+  }
+
+  function resetForm() {
+    editingId = null;
+    $('#foodName').value = ''; $('#foodCategory').value = ''; $('#foodDesc').value = '';
+    currentRating = 0; compressedPhoto = null; compressedFile = null;
+    pendingLat = null; pendingLng = null;
+    $('#btnSave').textContent = '💾 保存美食';
+    $('#btnCancel').style.display = 'none';
+    $('#coordText').textContent = '点击地图选择位置';
+    updateRatingStars(); updatePhotoPreview();
+    if (tempMarker) { markersLayer.removeLayer(tempMarker); tempMarker = null; }
+  }
+
+  async function confirmDelete(id) {
+    const food = allFoods.find(f=>f.id===id);
+    if (!food) return;
+    if (!currentUser || food.user_id !== currentUser.id) { toast('只能删除自己的记录'); return; }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `<div class="modal"><h3>确定删除？</h3><p style="font-size:13px;color:var(--text-secondary);">「${escHtml(food.name)}」将被永久删除</p><div class="modal-btns" style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;"><button class="btn btn-outline btn-sm" id="modalNo">取消</button><button class="btn btn-danger btn-sm" id="modalYes">确认删除</button></div></div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#modalNo').onclick = () => overlay.remove();
+    overlay.querySelector('#modalYes').onclick = async () => {
+      overlay.remove();
+      try {
+        await api('/api/foods/'+id, { method:'DELETE' });
+        removeMarker(id);
+        await loadAllFoods();
+        if (editingId===id) resetForm();
+        toast('已删除');
+      } catch (err) { toast('❌ '+err.message); }
+    };
+    overlay.addEventListener('click', e => { if (e.target===overlay) overlay.remove(); });
+  }
+
+  // ── List rendering ──
+  function renderFoodList() {
+    const query = ($('#searchInput').value||'').trim().toLowerCase();
+    let filtered = allFoods;
+
+    if (currentFilter === 'mine' && currentUser) {
+      filtered = filtered.filter(f => f.user_id === currentUser.id);
+    }
+    if (query) {
+      filtered = filtered.filter(f =>
+        f.name.toLowerCase().includes(query) ||
+        (f.category||'').toLowerCase().includes(query) ||
+        (f.description||'').toLowerCase().includes(query)
+      );
+    }
+
+    if (filtered.length === 0) {
+      $('#foodList').innerHTML = '';
+      $('#emptyState').style.display = 'block';
+      $('#emptyMsg').textContent = query ? '没有匹配的结果' : (currentFilter==='mine'?'你还没有添加美食':'还没有美食记录');
+      return;
+    }
+    $('#emptyState').style.display = 'none';
+
+    $('#foodList').innerHTML = filtered.map(f => {
+      const stars = '★'.repeat(f.rating||0);
+      const catLabel = f.category||'';
+      const isOwner = currentUser && f.user_id === currentUser.id;
+      const thumb = f.photo
+        ? `<img src="${photoUrl(f)}" alt="" loading="lazy">`
+        : `<span style="font-size:22px;">${categoryEmoji(f.category)}</span>`;
+      const date = f.created_at ? new Date(f.created_at).toLocaleDateString('zh-CN') : '';
+      const byHtml = f.username
+        ? `<span class="by${isOwner?' own':''}">${isOwner?'我':escHtml(f.username)}</span>`
+        : '';
+      const actionBtns = isOwner
+        ? `<button class="btn btn-outline btn-sm" data-act="edit" data-id="${f.id}">✏️</button>
+           <button class="btn btn-danger btn-sm" data-act="del" data-id="${f.id}">🗑</button>`
+        : '';
+
+      return `<div class="food-card" data-id="${f.id}">
+        <div class="thumb">${thumb}</div>
+        <div class="info">
+          <div class="name-row">
+            <span class="name">${escHtml(f.name)}</span>${byHtml}
+          </div>
+          <div class="meta">
+            ${catLabel?`<span class="cat">${escHtml(catLabel)}</span>`:''}
+            ${stars?`<span style="color:#f5a623;font-size:10px;">${stars}</span>`:''}
+            ${date?`<span>${date}</span>`:''}
+          </div>
+        </div>
+        <div class="actions">${actionBtns}</div>
+      </div>`;
+    }).join('');
+
+    // Card click → fly to marker
+    $('#foodList').querySelectorAll('.food-card').forEach(card => {
+      card.addEventListener('click', e => {
+        if (e.target.closest('button')) return;
+        const id = card.dataset.id;
+        const food = allFoods.find(f=>f.id===id);
+        if (food) { map.flyTo([food.lat,food.lng],18,{duration:0.8}); markerMap.get(id)?.openPopup(); }
+      });
+    });
+    // Edit / Delete buttons
+    $('#foodList').querySelectorAll('[data-act="edit"]').forEach(b => {
+      b.addEventListener('click', e => { e.stopPropagation(); startEdit(b.dataset.id); });
+    });
+    $('#foodList').querySelectorAll('[data-act="del"]').forEach(b => {
+      b.addEventListener('click', e => { e.stopPropagation(); confirmDelete(b.dataset.id); });
+    });
+  }
+
+  function updateFilterButtons() {
+    $$('.filter-bar button').forEach(b => b.classList.toggle('active', b.dataset.filter === currentFilter));
+  }
+
+  // ── Tab switching ──
+  function switchTab(name) {
+    $$('.sidebar-tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    $$('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-'+name));
+    if (name === 'list') renderFoodList();
+    if (name === 'settings') { loadSettingsUI(); renderTileOptions(); updateThemeUI(); }
+    setTimeout(() => map.invalidateSize(), 100);
+  }
+
+  // ── Rating ──
+  function updateRatingStars() {
+    $$('#ratingStars .star').forEach(s => s.classList.toggle('active', +s.dataset.r <= currentRating));
+  }
+
+  // ── Event bindings ──
+  function bindEvents() {
+    // Tabs
+    $$('.sidebar-tabs button').forEach(b => b.addEventListener('click', () => {
+      if (!b.disabled) switchTab(b.dataset.tab);
+    }));
+
+    // Rating
+    $$('#ratingStars .star').forEach(s => s.addEventListener('click', () => {
+      currentRating = +s.dataset.r; updateRatingStars();
+    }));
+
+    // Photo upload
+    $('#photoUpload').addEventListener('click', () => $('#photoInput').click());
+    $('#photoInput').addEventListener('change', e => { if (e.target.files[0]) handlePhotoFile(e.target.files[0]); });
+    $('#cameraInput').addEventListener('change', e => { if (e.target.files[0]) handlePhotoFile(e.target.files[0]); });
+    $('#btnCamera').addEventListener('click', e => { e.stopPropagation(); $('#cameraInput').click(); });
+    $('#btnGallery').addEventListener('click', e => { e.stopPropagation(); $('#photoInput').click(); });
+
+    // Show camera/gallery buttons on mobile
+    const isMobile = /Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent) || window.innerWidth <= 768;
+    if (isMobile) {
+      $('#photoActions').classList.add('show');
+      $('#photoUpload').querySelector('.upload-hint').textContent = '选择拍照或从相册上传';
+    }
+
+    // Save / Cancel
+    $('#btnSave').addEventListener('click', saveFood);
+    $('#btnCancel').addEventListener('click', resetForm);
+
+    // Auth
+    $('#btnLogin').addEventListener('click', () => showAuthModal('login'));
+    $('#btnLoginPrompt').addEventListener('click', () => showAuthModal('login'));
+    $('#btnLogout').addEventListener('click', () => {
+      clearToken(); currentUser = null;
+      updateAuthUI(); resetForm(); loadAllFoods();
+      toast('已退出登录');
+    });
+
+    // Theme
+    $('#themeToggle').addEventListener('click', toggleTheme);
+    $('#themeSwitch').addEventListener('click', toggleTheme);
+
+    // Search & Filter
+    $('#searchInput').addEventListener('input', renderFoodList);
+    $$('.filter-bar button').forEach(b => b.addEventListener('click', () => {
+      currentFilter = b.dataset.filter;
+      updateFilterButtons(); renderFoodList();
+    }));
+
+    // Settings
+    $('#btnSaveLocation').addEventListener('click', () => {
+      const lat=+$('#settingLat').value, lng=+$('#settingLng').value, zoom=+$('#settingZoom').value||DEFAULT_ZOOM;
+      if (isNaN(lat)||isNaN(lng)||lat<-90||lat>90||lng<-180||lng>180) { toast('请输入有效坐标'); return; }
+      saveSettings({lat,lng,zoom}); map.flyTo([lat,lng],zoom,{duration:1});
+      toast('✅ 默认位置已更新');
+    });
+    $('#btnResetLocation').addEventListener('click', () => {
+      saveSettings({}); loadSettingsUI();
+      map.flyTo(DEFAULT_CENTER,DEFAULT_ZOOM,{duration:1}); toast('已恢复默认');
+    });
+    $('#btnClearMy').addEventListener('click', async () => {
+      if (!currentUser) { toast('请先登录'); return; }
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `<div class="modal"><h3>清除我的全部数据？</h3><p style="font-size:13px;color:var(--text-secondary);">仅删除你发布的所有美食记录，他人数据不受影响。不可恢复。</p><div class="modal-btns" style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;"><button class="btn btn-outline btn-sm" id="mNo">取消</button><button class="btn btn-danger btn-sm" id="mYes">确认清除</button></div></div>`;
+      document.body.appendChild(overlay);
+      overlay.querySelector('#mNo').onclick = ()=>overlay.remove();
+      overlay.querySelector('#mYes').onclick = async ()=>{
+        overlay.remove();
+        const mine = allFoods.filter(f=>f.user_id===currentUser.id);
+        let deleted=0;
+        for (const f of mine) {
+          try { await api('/api/foods/'+f.id,{method:'DELETE'}); deleted++; } catch{}
+        }
+        await loadAllFoods(); resetForm();
+        toast(`已清除 ${deleted} 条记录`);
+      };
+      overlay.addEventListener('click', e=>{if(e.target===overlay)overlay.remove();});
+    });
+
+    // Popup button delegation
+    document.addEventListener('click', e => {
+      const editBtn = e.target.closest('[data-edit]');
+      const delBtn = e.target.closest('[data-del]');
+      if (editBtn) { startEdit(editBtn.dataset.edit); map.closePopup(); }
+      if (delBtn) { confirmDelete(delBtn.dataset.del); map.closePopup(); }
+    });
+
+    // Keyboard
+    document.addEventListener('keydown', e => { if (e.key==='Escape') resetForm(); });
+
+    // Resize
+    let timer;
+    window.addEventListener('resize', () => { clearTimeout(timer); timer=setTimeout(()=>map.invalidateSize(),250); });
+    window.addEventListener('orientationchange', () => setTimeout(()=>map.invalidateSize(),500));
+  }
+
+  // ── Init ──
+  async function init() {
+    initTheme();
+    initMap();
+    bindEvents();
+    loadSettingsUI();
+    renderTileOptions();
+    updateThemeUI();
+    await checkAuth();
+    await loadAllFoods();
+
+    if (allFoods.length === 0) {
+      const s = getSettings();
+      pendingLat = s.lat || DEFAULT_CENTER[0];
+      pendingLng = s.lng || DEFAULT_CENTER[1];
+      updateCoordDisplay();
+    }
+  }
+
+  init().catch(err => {
+    console.error('初始化失败:', err);
+    document.body.innerHTML=`<div style="padding:40px;text-align:center;color:var(--text);"><h2>⚠️ 加载失败</h2><p>${err.message}</p><p style="margin-top:12px;font-size:13px;">请刷新页面重试，或确认后端服务已启动</p></div>`;
+  });
+
+})();
+</script>
+</body>
+</html>
