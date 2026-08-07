@@ -286,6 +286,72 @@ function getLocalIPs() {
 // 端口: 默认 0 = 系统自动分配随机空闲端口，永不冲突；也可用环境变量 PORT 指定
 const listenPort = parseInt(process.env.PORT, 10) || 0;
 
+// ── 公网隧道（Cloudflare 快速隧道，无验证页）──
+// cloudflared 二进制可能在 npm install 时下载失败（GitHub 被墙），这里自动修复
+function downloadFile(url, dest, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const file = fs.createWriteStream(dest);
+    let req;
+    const timer = setTimeout(() => { req && req.destroy(); file.destroy(); reject(new Error('下载超时')); }, timeoutMs || 60000);
+    req = https.get(url, (res) => {
+      const redirectCodes = [301, 302, 303, 307, 308];
+      if (redirectCodes.includes(res.statusCode) && res.headers.location) {
+        file.close(); clearTimeout(timer);
+        return resolve(downloadFile(res.headers.location, dest, timeoutMs));
+      }
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        res.pipe(file);
+        file.on('finish', () => { clearTimeout(timer); file.close(() => resolve(dest)); });
+      } else {
+        clearTimeout(timer); file.destroy(); reject(new Error('HTTP ' + res.statusCode));
+      }
+    });
+    req.on('error', (e) => { clearTimeout(timer); reject(e); });
+  });
+}
+
+async function ensureCloudflared(cfBin) {
+  if (fs.existsSync(cfBin) && fs.statSync(cfBin).size > 1000000) return true;
+  fs.mkdirSync(path.dirname(cfBin), { recursive: true });
+  const gh = 'https://github.com/cloudflare/cloudflared/releases/latest/download/';
+  const mirrors = [gh, 'https://gh-proxy.com/' + gh, 'https://mirror.ghproxy.com/' + gh];
+  let file = '';
+  if (process.platform === 'win32') file = process.arch === 'ia32' ? 'cloudflared-windows-386.exe' : 'cloudflared-windows-amd64.exe';
+  else if (process.platform === 'linux') file = process.arch === 'arm64' ? 'cloudflared-linux-arm64' : 'cloudflared-linux-amd64';
+  else return false; // macos 等平台交给 npm 包自身处理
+  for (const base of mirrors) {
+    try {
+      await downloadFile(base + file, cfBin);
+      if (fs.existsSync(cfBin) && fs.statSync(cfBin).size > 1000000) {
+        if (process.platform !== 'win32') fs.chmodSync(cfBin, 0o755);
+        return true;
+      }
+    } catch {}
+    try { fs.unlinkSync(cfBin); } catch {}
+  }
+  return false;
+}
+
+function startTunnel(cfBin, port) {
+  const child = spawn(cfBin, ['tunnel', '--url', `http://localhost:${port}`], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = '';
+  const grab = (chunk) => {
+    output += chunk.toString();
+    const m = output.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+    if (m && !child._urlPrinted) {
+      child._urlPrinted = true;
+      console.log(`  🌐 公网访问:  ${m[0]}`);
+      console.log('');
+      console.log('  按 Ctrl+C 停止服务');
+      console.log('');
+    }
+  };
+  child.stdout.on('data', grab);
+  child.stderr.on('data', grab);
+  child.on('exit', () => console.log('  ⚠️  公网隧道已断开，重启服务可重新连接'));
+}
+
 const server = app.listen(listenPort, '0.0.0.0', () => {
   const PORT = server.address().port; // 实际分配到的端口
   const ips = getLocalIPs();
@@ -296,31 +362,17 @@ const server = app.listen(listenPort, '0.0.0.0', () => {
   ips.forEach(ip => console.log(`  局域网:    http://${ip}:${PORT}`));
   console.log('');
 
-  // 自动启动公网隧道（Cloudflare 快速隧道，无验证页）
-  try {
-    const cfBin = path.join(__dirname, 'node_modules', 'cloudflared', 'bin', 'cloudflared.exe');
-    if (fs.existsSync(cfBin)) {
-      const child = spawn(cfBin, ['tunnel', '--url', `http://localhost:${PORT}`], { stdio: ['ignore', 'pipe', 'pipe'] });
-      let output = '';
-      const grab = (chunk) => {
-        output += chunk.toString();
-        const m = output.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
-        if (m && !child._urlPrinted) {
-          child._urlPrinted = true;
-          console.log(`  🌐 公网访问:  ${m[0]}`);
-          console.log('');
-          console.log('  按 Ctrl+C 停止服务');
-          console.log('');
-        }
-      };
-      child.stdout.on('data', grab);
-      child.stderr.on('data', grab);
-      child.on('exit', () => console.log('  ⚠️  公网隧道已断开，重启服务可重新连接'));
+  // 自动启动公网隧道
+  const cfBin = path.join(__dirname, 'node_modules', 'cloudflared', 'bin', process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared');
+  (async () => {
+    if (await ensureCloudflared(cfBin)) {
+      startTunnel(cfBin, PORT);
     } else {
-      console.log('  ⚠️  未找到 cloudflared，跳过公网隧道');
+      console.log('  ⚠️  公网隧道不可用：cloudflared 下载失败（网络限制）');
+      console.log('     内网访问不受影响。可手动下载 cloudflared 后重试');
+      console.log('');
+      console.log('  按 Ctrl+C 停止服务');
+      console.log('');
     }
-  } catch (e) {
-    console.log('  ⚠️  公网隧道启动失败（内网仍可访问）');
-    console.log('');
-  }
+  })();
 });
